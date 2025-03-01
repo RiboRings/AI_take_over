@@ -1,3 +1,14 @@
+import torch
+
+# Check and set CUDA if available
+print(f"Is CUDA supported by this system?{torch.cuda.is_available()}")
+print(f"CUDA version: {torch.version.cuda}")
+cuda_id = torch.cuda.current_device()
+print(f"ID of current CUDA device:{torch.cuda.current_device()}")
+print(f"Name of current CUDA device:{torch.cuda.get_device_name(cuda_id)}")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
 # -*- coding: utf-8 -*-
 """aquamonitor-jyu-cpu
 
@@ -7,13 +18,13 @@ Original file is located at
     https://colab.research.google.com/drive/1Fas7M-qiIbq0D2aSd22Th6fiYWstR-TN
 """
 
-!pip install datasets
+#!pip install datasets
 
 from datetime import datetime
 t = datetime.now()
 
 from datasets import load_dataset
-ds = load_dataset("mikkoim/aquamonitor-jyu", cache_dir="data")
+ds = load_dataset("mikkoim/aquamonitor-jyu", cache_dir="Dataset/data")
 
 from huggingface_hub import hf_hub_download
 hf_hub_download(repo_id="mikkoim/aquamonitor-jyu", filename="aquamonitor-jyu.parquet.gzip", repo_type="dataset", local_dir=".")
@@ -74,7 +85,7 @@ dl_val = DataLoader(ds_val, batch_size=batch_size)
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from tqdm.notebook import tqdm
+from tqdm import tqdm # For Jupyter tqdm.notebook
 from sklearn.metrics import f1_score
 
 class CNN(nn.Module):
@@ -102,8 +113,8 @@ def validate(model, val_dataloader):
     all_labels = []
     with torch.no_grad():
         for batch in val_dataloader:
-            images = batch["img"]
-            labels = batch["label"]
+            images = batch["img"].to(device)
+            labels = batch["label"].to(device)
             outputs = model(images)
             preds = torch.argmax(outputs, dim=1)
             all_preds.extend(preds.cpu().numpy())
@@ -117,8 +128,8 @@ def train(model, train_dataloader, val_dataloader, criterion, optimizer, epochs=
     for epoch in range(epochs):
         total_loss = 0
         for batch in tqdm(train_dataloader):
-            images = batch["img"]
-            labels = batch["label"]
+            images = batch["img"].to(device)
+            labels = batch["label"].to(device)
             optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -132,8 +143,9 @@ def train(model, train_dataloader, val_dataloader, criterion, optimizer, epochs=
 
 print(datetime.now() - t)
 
-model = CNN(n_classes=len(classes))
-criterion = nn.CrossEntropyLoss()
+model = CNN(n_classes=len(classes)).to(device)
+print(f"Modell wird auf folgendem Device ausgeführt: {next(model.parameters()).device}")
+criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 train(model=model,
@@ -171,14 +183,16 @@ class CNN(nn.Module):
 
 model_eval = CNN(len(classes))
 model_eval.load_state_dict(torch.load("model.pt", weights_only=True))
+model_eval.to(device)
+print(f"Modell wird auf folgendem Device ausgeführt: {next(model_eval.parameters()).device}")
 
 model_eval.eval()
 all_preds = []
 all_labels = []
 with torch.no_grad():
     for batch in tqdm(dl_val):
-        images = batch["img"]
-        labels = batch["label"]
+        images = batch["img"].to(device)
+        labels = batch["label"].to(device)
         outputs = model_eval(images)
         preds = torch.argmax(outputs, dim=1)
         all_preds.extend(preds.cpu().numpy())
