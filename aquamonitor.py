@@ -19,7 +19,7 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from torchvision.models import swin_v2_t, Swin_V2_T_Weights
+from torchvision.models import resnet18, ResNet18_Weights
 from tqdm import tqdm
 
 
@@ -58,8 +58,8 @@ label_dict = dict(zip(metadata["img"], metadata["taxon_group"].map(class_map)))
 class_map_inv
 
 IMAGE_SIZE = 224
-BATCH_SIZE = 16
-EPOCH_NUM = 3
+BATCH_SIZE = 32
+EPOCH_NUM = 30
 
 tf = transforms.Compose([
     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
@@ -91,10 +91,10 @@ eval_loader = DataLoader(
     batch_size=BATCH_SIZE
 )
 
-model = swin_v2_t(weights = Swin_V2_T_Weights.DEFAULT)
+model = resnet18()
 
-in_features = model.head.in_features
-model.head = nn.Linear(in_features, 31)
+in_features = model.fc.in_features
+model.fc = nn.Linear(in_features, 31)
 
 criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
