@@ -179,10 +179,10 @@ class CNN(nn.Module):
         x = self.flatten(x)
         x = self.fc(x)
         return x
-# And the model file 'model.pt' that should be possible to load with torch
+# And the model file 'model5epochs.pt' that should be possible to load with torch
 
 model_eval = CNN(len(classes))
-model_eval.load_state_dict(torch.load("model.pt", weights_only=True))
+model_eval.load_state_dict(torch.load("model5epochs.pt", weights_only=True))
 model_eval.to(device)
 print(f"Modell wird auf folgendem Device ausgeführt: {next(model_eval.parameters()).device}")
 

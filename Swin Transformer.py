@@ -138,7 +138,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
 train_losses = []
 val_losses = []
-num_epochs = 5
+num_epochs = 20
 
 train(model=model,
       train_dataloader=dl_train,
@@ -171,12 +171,12 @@ class CNN(nn.Module):
         x = self.flatten(x)
         x = self.fc(x)
         return x
-# And the model file 'model.pt' that should be possible to load with torch
+# And the model file 'model5epochs.pt' that should be possible to load with torch
 
 model_eval = swin_v2_b()
 in_features = model_eval.head.in_features
 model_eval.head = nn.Linear(in_features, len(classes))
-model_eval.load_state_dict(torch.load("model.pt", weights_only=True))
+model_eval.load_state_dict(torch.load("model5epochs.pt", weights_only=True))
 model_eval.to(device)
 print(f"Modell wird auf folgendem Device ausgeführt: {next(model_eval.parameters()).device}")
 

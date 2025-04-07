@@ -19,18 +19,20 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from torchvision.models import vit_b_16, ViT_B_16_Weights
+from torchvision.models import swin_v2_t, Swin_V2_T_Weights
+from tqdm import tqdm
+
 
 ds = load_dataset(
     "mikkoim/aquamonitor-jyu",
-    cache_dir="/kaggle/working/"
+    cache_dir="Dataset/data"
 )
 
 hf_hub_download(
     repo_id="mikkoim/aquamonitor-jyu",
     filename="aquamonitor-jyu.parquet.gzip",
     repo_type="dataset",
-    local_dir="/kaggle/working/"
+    local_dir="."
 )
 
 # dataset elements can be accessed with indices. Each "row" or record
@@ -43,7 +45,7 @@ print(record["__key__"])
 img
 
 # The keys match the rows in the metadata table
-metadata = pd.read_parquet("/kaggle/working/aquamonitor-jyu.parquet.gzip")
+metadata = pd.read_parquet("aquamonitor-jyu.parquet.gzip")
 metadata
 
 classes = sorted(metadata["taxon_group"].unique())
@@ -56,13 +58,11 @@ label_dict = dict(zip(metadata["img"], metadata["taxon_group"].map(class_map)))
 class_map_inv
 
 IMAGE_SIZE = 224
-BATCH_SIZE = 32
-EPOCH_NUM = 20
+BATCH_SIZE = 16
+EPOCH_NUM = 3
 
 tf = transforms.Compose([
     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    transforms.RandomHorizontalFlip(p=0.75),
-    transforms.RandomVerticalFlip(p=0.75),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ])
@@ -73,10 +73,10 @@ def preprocess(batch):
             "label": torch.as_tensor([label_dict[x] for x in batch["__key__"]], dtype=torch.long)}
 
 train_ds = ds["train"].with_transform(preprocess)
-devel_ds = ds["validation"].with_transform(preprocess)
+eval_ds = ds["validation"].with_transform(preprocess)
 
 print(f"Train Size: {train_ds.num_rows}")
-print(f"Devel Size: {devel_ds.num_rows}")
+print(f"eval Size: {eval_ds.num_rows}")
 
 # plt.imshow(train_ds[2014]["img"].permute(1, 2, 0).numpy())
 
@@ -86,28 +86,18 @@ train_loader = DataLoader(
     shuffle=True
 )
 
-devel_loader = DataLoader(
-    devel_ds,
+eval_loader = DataLoader(
+    eval_ds,
     batch_size=BATCH_SIZE
 )
 
-model = vit_b_16(weights=ViT_B_16_Weights.DEFAULT)
+model = swin_v2_t(weights = Swin_V2_T_Weights.DEFAULT)
 
-model.heads.head = nn.Linear(
-    in_features=model.heads.head.in_features,
-    out_features=len(classes)
-)
+in_features = model.head.in_features
+model.head = nn.Linear(in_features, 31)
 
-# Freeze the feature extractor parameters
-for param in model.parameters():
-    param.requires_grad = False
-
-# Unfreeze the classifier head parameters
-for param in model.heads.head.parameters():
-    param.requires_grad = True
-
-criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.heads.head.parameters(), lr=1e-4)
+criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
     optimizer,
@@ -122,8 +112,8 @@ model.to(device)
 # Initialise objects to store results
 train_losses = []
 train_f1s = []
-devel_losses = []
-devel_f1s = []
+eval_losses = []
+eval_f1s = []
 best_loss = float('inf')
 best_model_weights = None
 
@@ -133,7 +123,7 @@ for epoch in range(EPOCH_NUM):
     train_labels = []
     train_preds = []
 
-    for batch in train_loader:
+    for batch in tqdm(train_loader):
         images, labels = batch["img"], batch["label"]
         images, labels = images.to(device), labels.to(device)
 
@@ -158,40 +148,40 @@ for epoch in range(EPOCH_NUM):
 
     # Validation phase
     model.eval()
-    devel_running_loss = 0.0
-    devel_labels = []
-    devel_preds = []
+    eval_running_loss = 0.0
+    eval_labels = []
+    eval_preds = []
 
     with torch.no_grad():
-        for batch in devel_loader:
+        for batch in eval_loader:
             images, labels = batch["img"], batch["label"]
             images, labels = images.to(device), labels.to(device)
 
             outputs = model(images)
             loss = criterion(outputs, labels)
-            devel_running_loss += loss.item()
+            eval_running_loss += loss.item()
 
             # Calculate validation F1 score
             _, preds = torch.max(outputs.data, 1)
-            devel_labels.extend(labels.cpu().numpy())
-            devel_preds.extend(preds.cpu().numpy())
+            eval_labels.extend(labels.cpu().numpy())
+            eval_preds.extend(preds.cpu().numpy())
 
     # Calculate and store validation loss and accuracy
-    devel_loss = devel_running_loss / len(devel_loader)
-    devel_f1 = f1_score(devel_labels, devel_preds, average='weighted')
-    devel_losses.append(devel_loss)
-    devel_f1s.append(devel_f1)
+    eval_loss = eval_running_loss / len(eval_loader)
+    eval_f1 = f1_score(eval_labels, eval_preds, average='weighted')
+    eval_losses.append(eval_loss)
+    eval_f1s.append(eval_f1)
 
     # Step the scheduler
-    scheduler.step(devel_loss)
+    scheduler.step(eval_loss)
 
     print(f'Epoch [{epoch+1}/{EPOCH_NUM}], lr: {scheduler.get_last_lr()[0]}, '
           f'Train Loss: {train_loss:.4f}, Train F1-Score: {train_f1:.3g}, '
-          f'Devel Loss: {devel_loss:.4f}, Devel F1-Score: {devel_f1:.3g}')
+          f'eval Loss: {eval_loss:.4f}, eval F1-Score: {eval_f1:.3g}')
 
     # Check if we have a new best model
-    if devel_loss < best_loss:
-        best_loss = devel_loss
+    if eval_loss < best_loss:
+        best_loss = eval_loss
         best_model_weights = model.state_dict()
 
 # Restore best weights
@@ -200,7 +190,7 @@ if best_model_weights is not None:
     # Load best model
     model.load_state_dict(best_model_weights)
     # Save best model
-    torch.save(best_model_weights, '/kaggle/working/fine_tuned_vit.pth')
+    torch.save(best_model_weights, 'model.pth')
 
 # Plot the learning curves
 plt.figure(figsize=(12, 5))
@@ -208,7 +198,7 @@ plt.figure(figsize=(12, 5))
 # Loss plot
 plt.subplot(1, 2, 1)
 plt.plot(range(1, EPOCH_NUM + 1), train_losses, label='Train Set')
-plt.plot(range(1, EPOCH_NUM + 1), devel_losses, label='Devel Set')
+plt.plot(range(1, EPOCH_NUM + 1), eval_losses, label='eval Set')
 plt.title('Loss Curve')
 plt.xlabel('Epochs')
 plt.ylabel('Loss')
@@ -217,10 +207,11 @@ plt.legend()
 # F1-Score plot
 plt.subplot(1, 2, 2)
 plt.plot(range(1, EPOCH_NUM + 1), train_f1s, label='Train Set')
-plt.plot(range(1, EPOCH_NUM + 1), devel_f1s, label='Devel Set')
+plt.plot(range(1, EPOCH_NUM + 1), eval_f1s, label='eval Set')
 plt.title('F1-Score Curve')
 plt.xlabel('Epochs')
 plt.ylabel('F1-Score')
 plt.legend()
 
 plt.tight_layout()
+plt.show()
