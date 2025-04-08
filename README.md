@@ -11,4 +11,6 @@ We used several deep learning architectures to address the task, including:
 - Fine-tuned ViT ([Final version](https://github.com/RiboRings/AI_take_over/blob/main/models/aquavit.ipynb), [All versions](https://www.kaggle.com/code/giuliobenedetti/aquamonitor))
 - [ReSwine Ensemble model](https://github.com/RiboRings/AI_take_over/blob/main/models/aquaensemble.ipynb)
 
+While the Final version corresponds to the last push from Kaggle, you can navigate the version history on Kaggle by clicking on "All versions", where several different parameter settings for each architecture have been tested.
+
 Our final model (ReSwine ensemble architecture) is provided in the main directory as a Python script: [model.py](https://github.com/RiboRings/AI_take_over/blob/main/model.py)
